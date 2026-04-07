@@ -12,11 +12,8 @@ const SearchCodeSchema = z.object({
 
 const searchCode = tool(
   async (args, runtime) => {
-    const parsed = SearchCodeSchema.safeParse(args);
-    if (!parsed.success) {
-      return `search_code 参数无效: ${parsed.error.message}`;
-    }
-    const { query, k = 5 } = parsed.data;
+    // const { getCodeVectorStore } = require("../services/vectorStore");
+    const { query, k = 5 } = args;
     const store = await getCodeVectorStore();
 
     // 1. 构建过滤条件数组

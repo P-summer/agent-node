@@ -36,6 +36,7 @@ async function generateSessionTitle(userMessage) {
 
 const systemPromptPath = path.resolve(__dirname, "../utils/system-prompt.md");
 const systemPrompt = fs.readFileSync(systemPromptPath, "utf8");
+
 // 创建 Agent（只创建一次）
 const agent = createAgent({
   model: deepSeekModel,

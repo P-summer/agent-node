@@ -9,19 +9,19 @@ const SearchMemorySchema = z.object({
 
 const searchMemory = tool(
   async (args, runtime) => {
-    const parsed = SearchMemorySchema.safeParse(args);
-    if (!parsed.success) {
-      return `search_memory 参数无效: ${parsed.error.message}`;
+    try {
+      const { query, k = 5 } = args;
+      const userId = runtime?.context?.userId;
+      const store = await getVectorStore();
+      const results = await store.similaritySearch(query, k, { userId });
+      if (!results || results.length === 0) return "没有找到相关信息。";
+      return results
+        .map((d, i) => `相关信息 ${i + 1}: ${d.pageContent}`)
+        .join("\n\n");
+    } catch (e) {
+      console.error("[search_memory] tool failed:", e);
+      throw e; // 关键：让 agent 继续按原逻辑处理错误
     }
-    const { query, k = 5 } = parsed.data;
-    const userId = runtime?.context?.userId;
-    const store = await getVectorStore();
-    const results = await store.similaritySearch(query, k, { userId });
-    // console.log("search_memory results:", results);
-    if (!results || results.length === 0) return "没有找到相关信息。";
-    return results
-      .map((d, i) => `相关信息 ${i + 1}: ${d.pageContent}`)
-      .join("\n\n");
   },
   {
     name: "search_memory",

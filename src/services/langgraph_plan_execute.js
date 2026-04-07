@@ -1,46 +1,134 @@
 const { StateGraph, START, END } = require("@langchain/langgraph");
-const { generatePlan, executeStep, summarizeStream } = require("./planner");
-
+const { generatePlan, toolDescriptions } = require("./planner");
 const { deepSeekModel } = require("../llmModel/deepSeekModel");
+// 引入工具
+const { serperSearchTool } = require("../tools/serperSearchTool");
+const { searchMemory } = require("../tools/searchMemoryTool");
+const { saveMemory } = require("../tools/saveMemoryTool");
+const { timeTool } = require("../tools/timeTool");
+const { searchCode } = require("../tools/searchCodeTool");
 const fs = require("fs");
 const path = require("path");
 
+// 工具映射表收敛到LangGraph层
+const toolMap = {
+  web_search: serperSearchTool,
+  search_memory: searchMemory,
+  save_memory: saveMemory,
+  get_current_time: timeTool,
+  search_code: searchCode,
+};
+
 /**
- * 构建 plan-and-execute 的 LangGraph
+ * 执行单个步骤
+ * @param {Object} step - 步骤对象
+ * @param {Object} context - 上下文
+ * @param {string} userId - 用户ID
+ * @returns {Promise<string>} 步骤结果
+ */
+async function executeStep(step, context, userId) {
+  if (step.tool && toolMap[step.tool]) {
+    const toolInstance = toolMap[step.tool];
+    try {
+      const result = await toolInstance.invoke(step.parameters || {}, {
+        context: { userId },
+      });
+      return typeof result === "string" ? result : JSON.stringify(result);
+    } catch (err) {
+      console.error(`工具 ${step.tool} 调用失败:`, err);
+      return `工具调用失败: ${err.message}`;
+    }
+  } else {
+    // 无工具步骤，用LLM推理
+    const reasoningPrompt = `
+      基于已有信息回答问题。
+      对话历史：
+      ${context.historyMessages.map((msg) => `${msg._getType() === "human" ? "用户" : "助手"}: ${msg.content}`).join("\n")}
+
+      用户问题：${context.originalUserMessage}
+      当前步骤：${step.description}
+      之前步骤的结果：
+      ${context.results.map((r, i) => `步骤${i + 1}: ${r.description}\n结果: ${r.result}`).join("\n")}
+
+      请直接给出步骤结果，无需额外解释。
+    `;
+    const response = await deepSeekModel.invoke(reasoningPrompt);
+    return response.content;
+  }
+}
+
+/**
+ * 流式汇总步骤结果
+ * @param {Array} results - 步骤结果列表
+ * @param {string} userMessage - 原始用户消息
+ * @param {Array} historyMessages - 对话历史
+ * @returns {AsyncIterable<string>} 生成token的异步迭代器
+ */
+async function* summarizeStream(results, userMessage, historyMessages = []) {
+  const historyText = historyMessages
+    .map(
+      (msg) =>
+        `${msg._getType() === "human" ? "用户" : "助手"}: ${msg.content}`,
+    )
+    .join("\n");
+
+  const summaryPrompt = `
+你是一个助手，根据以下步骤执行结果回答用户的问题。
+
+对话历史：
+${historyText || "（无历史）"}
+
+用户问题：${userMessage}
+
+执行步骤与结果：
+${results.map((r, i) => `步骤${i + 1}: ${r.description}\n结果: ${r.result}`).join("\n")}
+
+请基于上述信息，生成简洁、准确的最终回答。
+  `;
+  const stream = await deepSeekModel.stream(summaryPrompt);
+  for await (const chunk of stream) {
+    const content = chunk.content;
+    if (content) yield content;
+  }
+}
+
+/**
+ * 构建plan-and-execute的LangGraph
  * @returns {CompiledStateGraph} 编译后的图
  */
 function buildPlanExecuteGraph() {
   // 定义节点函数
   const nodes = {
-    // 节点1：生成计划
     generatePlanNode: async (state, config) => {
-      const writer = config.writer; // LangGraph 提供的函数 用于发送自定义事件到前端
+      const writer = config.writer;
       const { messages } = state;
       const lastMsg = messages[messages.length - 1];
       const userMessage = lastMsg.content;
-      const historyMessages = messages.slice(0, -1); //传递历史（不包括最后一条）
+      const historyMessages = messages.slice(0, -1);
       const plan = await generatePlan(userMessage, historyMessages);
-      // 通过 writer 发送计划事件（SSE 会用）
+      console.log("[PLAN]", JSON.stringify(plan, null, 2));
       writer({ type: "plan", plan });
       return { plan, currentStepIndex: 0, stepResults: [] };
     },
 
-    // 节点2：执行一个步骤
     executeStepNode: async (state, config) => {
       const writer = config.writer;
       const { plan, currentStepIndex, stepResults, userId, messages } = state;
       if (currentStepIndex >= plan.length) {
-        return {}; // 无步骤可执行，图会通过条件边进入汇总
+        return {};
       }
       const step = plan[currentStepIndex];
       const context = {
         originalUserMessage: messages[messages.length - 1].content,
         results: stepResults,
-        historyMessages: messages.slice(0, -1), // 传递历史（不包括最后一条）
+        historyMessages: messages.slice(0, -1),
       };
+      // 执行步骤
+      console.log("[STEP]", step);
       const result = await executeStep(step, context, userId);
+      console.log("[STEP_RESULT]", result);
+
       const newStepResult = { description: step.description, result };
-      // 发送步骤结果事件
       writer({
         type: "step_result",
         stepIndex: currentStepIndex,
@@ -52,7 +140,6 @@ function buildPlanExecuteGraph() {
       };
     },
 
-    // 节点3：汇总并流式输出最终答案
     summarizeNode: async (state, config) => {
       const writer = config.writer;
       const { stepResults, messages } = state;
@@ -60,7 +147,6 @@ function buildPlanExecuteGraph() {
       const historyMessages = messages.slice(0, -1);
 
       if (stepResults.length === 0) {
-        // 无步骤结果，直接调用模型生成回答（可使用系统提示词）
         const systemPrompt = fs.readFileSync(
           path.resolve(__dirname, "../utils/system-prompt.md"),
           "utf8",
@@ -85,6 +171,7 @@ function buildPlanExecuteGraph() {
 
       let fullContent = "";
       try {
+        // 直接调用当前文件的summarizeStream
         for await (const token of summarizeStream(
           stepResults,
           userMessage,

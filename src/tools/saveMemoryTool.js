@@ -5,18 +5,13 @@ const { Document } = require("@langchain/core/documents");
 
 const SaveMemorySchema = z.object({
   content: z.string().min(1).describe("需要记住的文本"),
-  metadata: z.record(z.string()).optional().describe("可选元数据"),
+  metadata: z.string().optional().describe("可选元数据(JSON字符串)"),
 });
 
 const saveMemory = tool(
   async (args, runtime) => {
     try {
-      // 参数验证
-      const parsed = SaveMemorySchema.safeParse(args);
-      if (!parsed.success) {
-        return `save_memory 参数无效: ${parsed.error.message}`;
-      }
-      const { content, metadata = {} } = parsed.data;
+      const { content, metadata = {} } = args;
       const userId = runtime?.context?.userId ?? "unknown";
       const store = await getVectorStore();
 

@@ -9,7 +9,6 @@ const { errorResponse } = require("../utils/responseHandler");
 // 引入 token 计数器
 const { trimHistoryByTokens } = require("../services/tokenCounter");
 // 引入 planner
-// const { generatePlan, executeStep, summarize } = require("../services/planner");
 const { buildPlanExecuteGraph } = require("../services/langgraph_plan_execute");
 
 // 定义最大历史 token 数（预留 28K 给系统提示、工具调用、当前消息等）
