@@ -10,6 +10,7 @@ const {
 } = require("./middlewares/rateLimiter");
 
 const app = express();
+app.set("trust proxy", true);
 
 require("./db");
 

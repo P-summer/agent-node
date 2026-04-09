@@ -1,19 +1,11 @@
 const { Chroma } = require("@langchain/community/vectorstores/chroma");
 const { doubaoEmbeddings } = require("../utils/doubaoEmbedding");
 
-// const { HuggingFaceTransformersEmbeddings } = require("@langchain/community/embeddings/huggingface_transformers");
-// const {
-//   HuggingFaceTransformersEmbeddings,
-// } = require("@langchain/community/embeddings/huggingface_transformers");
-
-// const embeddings = new HuggingFaceTransformersEmbeddings({
-//   model: "Xenova/all-MiniLM-L6-v2",
-// });
 let vectorStore;
 
 async function getVectorStore() {
   if (vectorStore) return vectorStore;
-  const url = `http://${process.env.CHROMA_HOST || "localhost"}:${process.env.CHROMA_PORT || "8000"}`;
+  const url = process.env.CHROMA_URL || "http://localhost:8000";
   const collectionName = "user_memories";
   // console.log(`连接 Chroma: ${url}`);
 
@@ -38,7 +30,7 @@ async function getVectorStore() {
 let codeVectorStore = null;
 async function getCodeVectorStore() {
   if (codeVectorStore) return codeVectorStore;
-  const url = `http://${process.env.CHROMA_HOST || "localhost"}:${process.env.CHROMA_PORT || "8000"}`;
+  const url = process.env.CHROMA_URL || "http://localhost:8000";
   const collectionName = "codebase";
   try {
     codeVectorStore = await Chroma.fromExistingCollection(doubaoEmbeddings, {

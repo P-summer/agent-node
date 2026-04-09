@@ -15,7 +15,7 @@ const generalLimiter = rateLimit({
 // 严格限流：用于登录、注册等敏感接口（每15分钟最多5次）
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 10,
   message: {
     code: 429,
     message: "操作过于频繁，请稍后再试",
