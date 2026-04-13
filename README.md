@@ -1,6 +1,6 @@
 # AI Agent Server
 基于 Node.js 开发的 AI Agent 后端服务，核心依托 LangChain + LangGraph 构建，提供多大语言模型兼容、多执行模式、完善的记忆管理体系与丰富的工具调用能力，同时支持代码库 RAG（检索增强生成）、会话长度管控等企业级特性。
-
+[项目地址](http://39.108.48.40)
 ## 🌟 核心特性
 ### 1. 多LLM兼容适配
 - 支持 DeepSeek、豆包 大语言模型，完全兼容 OpenAI API 格式（ChatOpenAI 规范），可无缝切换不同 LLM 提供商
